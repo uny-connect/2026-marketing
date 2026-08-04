@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root { 
+      --primary: #0f172a;          /* Slate 900: 트렌디하고 깊이감 있는 블랙 */
+      --primary-hover: #1e293b;    /* Slate 800 */
+      --submitted-btn: #f1f5f9;    /* 연한 회색 버튼 */
+      --submitted-btn-hover: #e2e8f0;
+      
+      --bg: #f8fafc;               
+      --text: #0f172a;             
+      --sub: #334155;              /* Slate 700: 가독성을 높인 서브 텍스트 컬러 */
+      --disabled-text: #94a3b8;    
+      --card-bg: #ffffff;
+      --error-color: #df1b47;
+      
+      --success-bg: #f8fafc;       /* 제출 상태 인풋 배경을 더 투명하고 가볍게 변경 */
+      --success-border: #e2e8f0;   
+      --border-color: #cbd5e1;     /* Slate 300: 인풋 테두리를 조금 더 선명하게 */
+      --link-color: #2563eb;       /* 모던한 블루 링크 */
+    }
+    
+    * { box-sizing: border-box; letter-spacing: -0.02em; } 
+    body { 
+      font-family: 'Noto Sans KR', sans-serif; 
+      background-color: var(--bg); 
+      margin: 0; 
+      display: flex; 
+      justify-content: center; 
+      align-items: flex-start; 
+      min-height: 100vh; 
+      padding: 24px 12px; 
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    .card-container { 
+      background: var(--card-bg); 
+      padding: 24px 20px; 
+      border-radius: 20px; 
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05); /* 모던 테일윈드 스타일 섀도우 */
+      border: 1px solid rgba(15, 23, 42, 0.05);
+      width: 100%; 
+      max-width: 440px; 
+      text-align: center; 
+      animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
+      position: relative;
+    }
+    
+    @keyframes fadeIn { 
+      from { opacity: 0; transform: translateY(8px); } 
+      to { opacity: 1; transform: translateY(0); } 
+    }
+    
+    h2 { font-size: 1.3rem; font-weight: 700; margin: 0 0 8px 0; color: var(--primary); }
+    p.subtitle { color: var(--sub); font-size: 0.85rem; margin: 0 0 20px 0; font-weight: 400; word-break: keep-all; line-height: 1.5; }
+    .input-wrapper { margin-bottom: 14px; }
+
+    input[type="text"], input[type="url"] { 
+      width: 100%; 
+      padding: 10px 14px; 
+      background-color: #ffffff; 
+      border: 1px solid var(--border-color); 
+      border-radius: 10px; 
+      font-size: 14px; 
+      color: var(--text); 
+      outline: none; 
+      transition: all 0.2s ease; 
+      font-weight: 400;
+    }
+    input[type="text"]:focus, input[type="url"]:focus { 
+      border-color: #64748b; 
+      box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.15);
+    }
+    
+    input.submitted-input {
+      background-color: var(--success-bg) !important;
+      border-color: var(--success-border) !important;
+      color: #64748b !important;
+    }
+    
+    #codeInput { font-size: 18px; text-align: center; letter-spacing: 4px; font-weight: 700; text-transform: uppercase; color: var(--primary); }
+    
+    .action-btn { 
+      width: 100%; 
+      padding: 13px; 
+      background-color: var(--primary); 
+      color: white; 
+      border: none; 
+      border-radius: 10px; 
+      font-size: 14px; 
+      cursor: pointer; 
+      font-weight: 500; 
+      transition: all 0.2s ease; 
+    }
+    .action-btn:hover { background-color: var(--primary-hover); }
+
+    .hidden { display: none !important; }
+    #error-msg { color: var(--error-color); font-size: 13px; margin-top: 8px; font-weight: 500; min-height: 16px; }
+    
+    .submit-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; }
+    #welcome-message { font-size: 1.1rem; font-weight: 700; color: var(--text); margin: 0; }
+    .logout-btn { background: none; color: #64748b; border: none; padding: 2px 0; font-size: 11px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .logout-btn:hover { color: var(--text); }
+    
+    /* 🌟 매장별 구분감 및 상하 여백 밸런스 조정 */
+    .client-item { 
+      text-align: left; 
+      margin-bottom: 18px; 
+      padding-bottom: 14px; 
+      border-bottom: 1px solid #f8fafc; 
+    }
+    .client-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+    
+    /* 타이틀 라인 정렬 */
+    .client-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .client-label { font-size: 0.88rem; font-weight: 600; color: var(--sub); display: inline-flex; align-items: center; gap: 3px; }
+    
+    .input-group { display: flex; gap: 8px; align-items: stretch; }
+    .input-group input { flex: 1; }
+    
+    .input-group button { 
+      width: 64px; 
+      padding: 0; 
+      font-size: 13px; 
+      border-radius: 10px; 
+      border: 1px solid transparent;
+      font-weight: 500; 
+      cursor: pointer; 
+      transition: all 0.2s ease;
+    }
+    
+    .input-group button.btn-submit { background-color: var(--primary); color: white; }
+    .input-group button.btn-submit:hover { background-color: var(--primary-hover); }
+    .input-group button.btn-modify { background-color: var(--submitted-btn); color: #475569; border: 1px solid #e2e8f0; }
+    .input-group button.btn-modify:hover { background-color: var(--submitted-btn-hover); }
+    .input-group button:disabled { background: #f8fafc; color: var(--disabled-text); border-color: #e2e8f0; cursor: not-allowed; }
+
+    /* 모던 사스 템플릿용 블루 링크 디자인 */
+    .view-link { font-size: 11px; color: var(--link-color); text-decoration: none; font-weight: 500; opacity: 0.85; transition: opacity 0.15s; }
+    .view-link:hover { opacity: 1; text-decoration: underline; }
+
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.2); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; vertical-align: middle; }
+    #btn-spinner { border: 2px solid rgba(15, 23, 42, 0.1); border-top-color: var(--primary); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    #initial-loading { padding: 20px 0; font-size: 14px; color: var(--sub); }
+    #initial-loading .spinner { border: 2px solid #e2e8f0; border-top-color: var(--primary); width: 24px; height: 24px; margin-bottom: 12px; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.25s ease; }
+    .modal-overlay.show { opacity: 1; visibility: visible; }
+    .modal-content { background: white; padding: 24px 20px; border-radius: 16px; width: 90%; max-width: 300px; text-align: center; transform: scale(0.95); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
+    .modal-overlay.show .modal-content { transform: scale(1); }
+    .modal-text { margin: 0 0 20px 0; font-size: 14px; color: var(--text); line-height: 1.5; word-break: keep-all; font-weight: 400; }
+    .modal-btn { padding: 12px; width: 100%; border-radius: 8px; background: var(--primary); color: white; border: none; font-weight: 500; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <div id="customModal" class="modal-overlay">
+    <div class="modal-content">
+      <p id="modalText" class="modal-text"></p>
+      <button class="modal-btn" onclick="closeModal()">확인</button>
+    </div>
+  </div>
+
+  <div class="card-container" id="loading-box">
+    <div id="initial-loading">
+      <div class="spinner"></div>
+      <div style="font-weight: 400; margin-top: 8px;">인증 상태를 확인하고 있습니다</div>
+    </div>
+  </div>
+
+  <div class="card-container hidden" id="login-box">
+    <h2>콘텐츠 제출 시스템</h2>
+    <p class="subtitle">배정받으신 6자리의 인증 코드를 입력하여 안전하게 접속하십시오.</p>
+    <div class="input-wrapper">
+      <input type="text" id="codeInput" placeholder="CODE" maxlength="6" autocomplete="off" spellcheck="false">
+    </div>
+    <button id="submitBtn" class="action-btn" onclick="checkCode()">접속하기</button>
+    <div id="error-msg"></div>
+  </div>
+
+  <div class="card-container hidden" id="submit-box">
+    <div class="submit-header">
+      <div id="welcome-message"></div>
+      <button class="logout-btn" onclick="logout()">다른 코드 입력하기</button>
+    </div>
+    <div id="url-form-container"></div>
+  </div>
+
+  <script>
+    let currentRow = 0; 
+    let clientData = []; 
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedCode = localStorage.getItem('savedCreatorCode');
+      if (savedCode) {
+        document.getElementById('codeInput').value = savedCode;
+        checkCode(savedCode);
+      } else {
+        document.getElementById('loading-box').classList.add('hidden');
+        document.getElementById('login-box').classList.remove('hidden');
+      }
+    });
+
+    function showModal(msg) {
+      document.getElementById('modalText').innerText = msg;
+      document.getElementById('customModal').classList.add('show');
+    }
+    function closeModal() {
+      document.getElementById('customModal').classList.remove('show');
+    }
+
+    document.getElementById("codeInput").addEventListener("keypress", function(event) {
+      if (event.key === "Enter") { event.preventDefault(); checkCode(); }
+    });
+
+    function checkCode(autoCode) {
+      const codeInput = document.getElementById('codeInput');
+      const submitBtn = document.getElementById('submitBtn');
+      const errorMsg = document.getElementById('error-msg');
+      const code = (autoCode || codeInput.value).toUpperCase().trim(); 
+      
+      if(code.length === 0) { 
+        document.getElementById('loading-box').classList.add('hidden');
+        document.getElementById('login-box').classList.remove('hidden');
+        errorMsg.innerText = "접속 코드를 정확히 입력해 주십시오."; 
+        codeInput.focus(); 
+        return; 
+      }
+      
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span>';
+      errorMsg.innerText = "";
+      
+      google.script.run
+        .withSuccessHandler(function(response) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '접속하기';
+          document.getElementById('loading-box').classList.add('hidden');
+          
+          if(response.success) {
+            currentRow = response.row;
+            clientData = response.clients; 
+            
+            localStorage.setItem('savedCreatorCode', code);
+            
+            document.getElementById('login-box').classList.add('hidden');
+            document.getElementById('submit-box').classList.remove('hidden');
+            document.getElementById('welcome-message').innerText = response.creatorName + " 님";
+            
+            renderUrlForm();
+          } else {
+            localStorage.removeItem('savedCreatorCode');
+            document.getElementById('login-box').classList.remove('hidden');
+            errorMsg.innerText = response.message;
+            codeInput.value = "";
+            codeInput.focus();
+          }
+        })
+        .withFailureHandler(function(err) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '접속하기';
+          document.getElementById('loading-box').classList.add('hidden');
+          document.getElementById('login-box').classList.remove('hidden');
+          errorMsg.innerText = "서버와의 연결이 원활하지 않습니다.";
+        })
+        .verifyCode(code);
+    }
+
+    function logout() {
+      localStorage.removeItem('savedCreatorCode');
+      document.getElementById('codeInput').value = "";
+      document.getElementById('error-msg').innerText = "";
+      document.getElementById('submit-box').classList.add('hidden');
+      document.getElementById('login-box').classList.remove('hidden');
+    }
+
+    function renderUrlForm() {
+      const container = document.getElementById('url-form-container');
+      let htmlStr = '';
+
+      if (!clientData || clientData.length === 0) {
+        container.innerHTML = '<p style="color:var(--sub); font-size:14px; padding:24px 0;">현재 배정된 일정이 존재하지 않습니다.</p>';
+        return;
+      }
+
+      clientData.forEach(client => {
+        if (client.excluded) {
+          htmlStr += `
+            <div class="client-item">
+              <div class="client-header">
+                <label class="client-label"> ${client.name}</label>
+              </div>
+              <input type="text" disabled placeholder="제외된 항목" style="padding:10px 14px; background-color: #f8fafc; border: 1px dashed #e2e8f0; text-align:center; color:var(--disabled-text); border-radius:10px; font-size:14px; width:100%;">
+            </div>
+          `;
+        } else {
+          let btnText = client.existingUrl ? "수정" : "제출";
+          let btnClass = client.existingUrl ? "btn-modify" : "btn-submit";
+          let inputClass = client.existingUrl ? "submitted-input" : "";
+          
+          let linkHtml = client.existingUrl ? `<a href="${client.existingUrl}" id="link_${client.colIndex}" target="_blank" class="view-link">🔗 링크</a>` : `<a href="#" id="link_${client.colIndex}" target="_blank" class="view-link hidden">🔗 링크</a>`;
+
+          htmlStr += `
+            <div class="client-item">
+              <div class="client-header">
+                <label class="client-label">📍 ${client.name}</label>
+                ${linkHtml}
+              </div>
+              <div class="input-group">
+                <input type="url" id="url_${client.colIndex}" class="${inputClass}" value="${client.existingUrl}" placeholder="https://..." autocomplete="off" oninput="validateInput(this)">
+                <button id="btn_${client.colIndex}" class="${btnClass}" onclick="submitSingle(${client.colIndex})">${btnText}</button>
+              </div>
+            </div>
+          `;
+        }
+      });
+      
+      container.innerHTML = htmlStr;
+    }
+
+    function validateInput(inputElem) {
+      let val = inputElem.value.trim().toLowerCase();
+      if (val === "") {
+        inputElem.style.borderColor = "var(--border-color)";
+        return true;
+      }
+      
+      let isValid = val.includes("blog.naver.com") || 
+                    val.includes("instagram.com") || 
+                    val.includes("youtube.com") || 
+                    val.includes("youtu.be");
+
+      if (!isValid) {
+        inputElem.style.borderColor = "var(--error-color)";
+        return false;
+      } else {
+        if(inputElem.classList.contains('submitted-input')) {
+          inputElem.style.borderColor = "var(--success-border)";
+        } else {
+          inputElem.style.borderColor = "#64748b"; 
+        }
+        return true;
+      }
+    }
+
+    function submitSingle(colIndex) {
+      const input = document.getElementById('url_' + colIndex);
+      const btn = document.getElementById('btn_' + colIndex);
+      const link = document.getElementById('link_' + colIndex);
+      let urlVal = input.value.trim();
+
+      if (urlVal === "") {
+        showModal("URL 주소를 입력해 주십시오.");
+        return;
+      }
+
+      if (!validateInput(input)) {
+        showModal("네이버 블로그, 인스타그램, 유튜브 링크만 등록 가능합니다.");
+        return;
+      }
+
+      if (urlVal.includes("m.blog.naver.com/")) {
+        urlVal = urlVal.replace("m.blog.naver.com/", "blog.naver.com/");
+        input.value = urlVal; 
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" id="btn-spinner"></span>';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false;
+          
+          btn.innerHTML = '수정'; 
+          btn.className = 'btn-modify';
+          input.className = 'submitted-input';
+          
+          link.href = res.url;
+          link.classList.remove('hidden');
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '제출';
+          showModal("저장 중 문제가 발생했습니다: " + err);
+        })
+        .saveSingleUrl(currentRow, colIndex, urlVal);
+    }
+  </script>
+</body>
+</html>
