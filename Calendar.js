@@ -167,21 +167,23 @@ function createCoverageSchedules() {
     if (status === "완료" || !title || isNaN(startDate.getTime())) continue;
 
     try {
+      // 1. 하루 전 알람 일정 (당일 오전 9시 알람)
       let alarmDayBefore = new Date(startDate);
       alarmDayBefore.setDate(startDate.getDate() - 1);
-      calendar.createAllDayEvent(`[알람] ${title} 하루 전`, alarmDayBefore);
+      createAtNineAM(calendar, `[알람] ${title} 하루 전`, alarmDayBefore, alarmDayBefore);
 
-      let calEndDate = new Date(endDate);
-      calEndDate.setDate(endDate.getDate() + 1);
-      calendar.createAllDayEvent(title, startDate, calEndDate);
+      // 2. 메인 취재 일정 (시작일 ~ 종료일, 오전 9시 알람)
+      createAtNineAM(calendar, title, startDate, endDate);
 
+      // 3. 마감 1주일 전 알람 (+8일, 당일 오전 9시 알람)
       let deadlineOneWeek = new Date(endDate);
       deadlineOneWeek.setDate(endDate.getDate() + 8);
-      calendar.createAllDayEvent(`${title} 마감 1주일전`, deadlineOneWeek);
+      createAtNineAM(calendar, `${title} 마감 1주일전`, deadlineOneWeek, deadlineOneWeek);
 
+      // 4. 마감 당일 알람 (+16일, 당일 오전 9시 알람)
       let deadlineFinal = new Date(deadlineOneWeek);
       deadlineFinal.setDate(deadlineOneWeek.getDate() + 8);
-      calendar.createAllDayEvent(`${title} 마감 당일`, deadlineFinal);
+      createAtNineAM(calendar, `${title} 마감 당일`, deadlineFinal, deadlineFinal);
 
       sheet.getRange(i + 1, 4).setValue("완료");
       count++;
@@ -189,7 +191,22 @@ function createCoverageSchedules() {
       console.log(`${i+1}행 등록 중 오류: ${e.message}`);
     }
   }
-  ui.alert(`✅ 총 ${count}건의 취재 세트가 수정된 마감 알람 기준(+8일 / +16일)으로 등록되었습니다.`);
+  ui.alert(`✅ 총 ${count}건의 취재 세트가 당일 오전 09:00 알람 기준으로 등록되었습니다.`);
+}
+
+/**
+ * 당일 오전 09:00 정시 알람 일정 생성 헬퍼 함수
+ */
+function createAtNineAM(calendar, title, startD, endD) {
+  const sDate = new Date(startD);
+  sDate.setHours(9, 0, 0, 0); // 시작 시간 오전 09:00 지정
+  
+  const eDate = new Date(endD);
+  eDate.setHours(10, 0, 0, 0); // 종료 시간 지정
+
+  const event = calendar.createEvent(title, sDate, eDate);
+  event.removeAllReminders();  // 기본 알림 초기화
+  event.addPopupReminder(0);    // 이벤트 시작 시각(오전 9시 정각)에 팝업 알람 발생
 }
 
 /**
