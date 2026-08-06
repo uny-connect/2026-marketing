@@ -1,9 +1,8 @@
 /*********************************************************************************
- * [일본 취재 등록봇] 2026スケジュール 자동화 시스템
+ * [일본 취재 등록봇] 2026スケジュール 자동화 시스템 (최적화 버전)
  *********************************************************************************/
 function checkAndRegisterSchedules() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // CONFIG 설정값 반영
   const sheet = ss.getSheetByName(CONFIG.SHEETS.JAPAN_SCHEDULE);
   const calendarName = CONFIG.CALENDARS.JAPAN_TRIP;
   const calendars = CalendarApp.getCalendarsByName(calendarName);
@@ -21,9 +20,18 @@ function checkAndRegisterSchedules() {
   const startCols = [3, 9, 15, 21, 27, 33, 39]; 
   const startRows = [51, 53, 63, 74, 76, 86, 95, 97, 108, 116, 118, 137, 158, 179, 200, 221, 242, 263, 284]; 
 
+  // 🚀 시트 데이터 전체를 2차원 배열로 한 번에 가져와서 API 호출 횟수를 획기적으로 축소
+  const sheetData = sheet.getDataRange().getDisplayValues();
+
   startRows.forEach(baseRow => {
     startCols.forEach(baseCol => {
-      const dateRaw = sheet.getRange(baseRow, baseCol).getDisplayValue().trim();
+      // 배열 인덱스 변환 (0-based)
+      const rowIdx = baseRow - 1;
+      const colIdx = baseCol - 1;
+
+      if (rowIdx >= sheetData.length || colIdx >= sheetData[0].length) return;
+
+      const dateRaw = sheetData[rowIdx][colIdx].trim();
       if (!dateRaw || !dateRaw.includes('/')) return;
 
       try {
@@ -43,7 +51,19 @@ function checkAndRegisterSchedules() {
           let lastDay = startDay + "日"; 
           dailySchedules[lastDay] = [];
 
-          const contentData = sheet.getRange(baseRow, baseCol, 25, 4).getDisplayValues();
+          // 메모리에서 25행 x 4열 데이터 슬라이스 추출
+          const contentData = [];
+          for (let r = 0; r < 25; r++) {
+            const currR = rowIdx + r;
+            if (currR < sheetData.length) {
+              const rowVals = [];
+              for (let c = 0; c < 4; c++) {
+                const currC = colIdx + c;
+                rowVals.push(currC < sheetData[currR].length ? sheetData[currR][currC] : "");
+              }
+              contentData.push(rowVals);
+            }
+          }
           
           contentData.forEach((row, index) => {
             let col1 = row[0].toString().trim(); 
@@ -139,7 +159,6 @@ function toCircleNumberExtended(num) {
  *********************************************************************************/
 function createCoverageSchedules() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // CONFIG 설정값 반영
   const sheet = ss.getSheetByName(CONFIG.SHEETS.CALENDAR_BOT);
   const ui = SpreadsheetApp.getUi();
 
@@ -199,14 +218,14 @@ function createCoverageSchedules() {
  */
 function createAtNineAM(calendar, title, startD, endD) {
   const sDate = new Date(startD);
-  sDate.setHours(9, 0, 0, 0); // 시작 시간 오전 09:00 지정
+  sDate.setHours(9, 0, 0, 0);
   
   const eDate = new Date(endD);
-  eDate.setHours(10, 0, 0, 0); // 종료 시간 지정
+  eDate.setHours(10, 0, 0, 0);
 
   const event = calendar.createEvent(title, sDate, eDate);
-  event.removeAllReminders();  // 기본 알림 초기화
-  event.addPopupReminder(0);    // 이벤트 시작 시각(오전 9시 정각)에 팝업 알람 발생
+  event.removeAllReminders(); 
+  event.addPopupReminder(0);  
 }
 
 /**
