@@ -44,9 +44,11 @@ function onEdit(e) {
     onEditBloggerUrl(e);
   }
   
-  // 2. 보고서 시트인 경우 -> 댓글창 실시간 추적 번역 엔진 작동
+  // 2. 보고서 시트인 경우 (미사용 기능 - 안전을 위해 선언 여부 검사 후 실행)
   if (sheetName === CONFIG.SHEETS.REPORT) {
-    onEditAutoCommentTranslate(e);
+    if (typeof onEditAutoCommentTranslate === 'function') {
+      onEditAutoCommentTranslate(e);
+    }
   }
 }
 
@@ -189,7 +191,7 @@ function formatToShortDate(val) {
 }
 
 /****************************************************************************************************************
- * [공통 유틸리티] 유튜브 ID 추출 함수 (필요 시 활용)
+ * [공통 유틸리티] 유튜브 ID 추출 함수
  *****************************************************************************************************************/
 function extractYouTubeId(url) {
   const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\??v?=\??))([^#\&\?]*).*/;
