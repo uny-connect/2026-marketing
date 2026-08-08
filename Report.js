@@ -18,43 +18,118 @@ function runSyncWithPrompt() {
   }
   
   const startTime = new Date().getTime();
-  const syncedCount = syncBloggerDataOptimized(startRow, targetClient);
+  const syncResult = syncBloggerDataOptimized(startRow, targetClient);
   const endTime = new Date().getTime();
-  
-  ui.alert(`${startRow}행부터 완료!\n✅ 처리 건수: ${syncedCount}건\n⏱️ 소요 시간: ${(endTime - startTime)/1000}초`);
+  const duration = ((endTime - startTime) / 1000).toFixed(1);
+
+  // 동기화 결과 상세 HTML 팝업 출력
+  showSyncResultModal(syncResult, startRow, duration);
 }
 
 /*********************************************************************************
- * [동적 매핑] 'report id' 시트에서 (A열: ID/URL, B열: 일본어 업체명) 읽어오기
+ * [결과 안내 HTML 모달]
+ *********************************************************************************/
+function showSyncResultModal(resultList, startRow, duration) {
+  let totalCount = 0;
+  let listHtml = "";
+
+  if (!Array.isArray(resultList) || resultList.length === 0) {
+    listHtml = `<div style="color: #64748b; padding: 20px 0; text-align: center;">새롭게 추가되거나 변경된 데이터가 없습니다. (모두 이미 완료됨)</div>`;
+  } else {
+    resultList.forEach(item => {
+      totalCount += item.count;
+      listHtml += `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+          <div>
+            <strong style="color: #0f172a; font-size: 14px;">📍 ${item.clientName}</strong>
+            <span style="background: #e2e8f0; color: #334155; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${item.count}건 처리</span>
+          </div>
+          <a href="${item.url}" target="_blank" style="background: #2563eb; color: white; padding: 5px 10px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold;">🔗 레포트 열기</a>
+        </div>
+      `;
+    });
+  }
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body { font-family: sans-serif; margin: 0; padding: 16px; color: #0f172a; }
+        .header { margin-bottom: 16px; }
+        .summary { background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 13px; color: #475569; margin-bottom: 16px; border: 1px solid #e2e8f0; }
+        .list-container { max-height: 280px; overflow-y: auto; }
+        .btn-close { width: 100%; margin-top: 16px; padding: 10px; background: #0f172a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h3 style="margin: 0 0 4px 0;">🎉 동기화 완료 리포트</h3>
+        <p style="margin: 0; font-size: 12px; color: #64748b;">${startRow}행부터 동기화가 성공적으로 완료되었습니다.</p>
+      </div>
+      <div class="summary">
+        ⏱️ 소요 시간: <strong>${duration}초</strong> | ✅ 신규/업데이트: <strong>${totalCount}건</strong>
+      </div>
+      <div class="list-container">
+        ${listHtml}
+      </div>
+      <button class="btn-close" onclick="google.script.host.close()">창 닫기</button>
+    </body>
+    </html>
+  `;
+
+  const htmlOutput = HtmlService.createHtmlOutput(htmlContent)
+    .setWidth(420)
+    .setHeight(450);
+  
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, '업체별 동기화 결과');
+}
+
+/*********************************************************************************
+ * [스마트 동적 매핑]
  *********************************************************************************/
 function getDynamicClientMap() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetName = (CONFIG.SHEETS && CONFIG.SHEETS.REPORT_ID) ? CONFIG.SHEETS.REPORT_ID : "report id";
-  const sheet = ss.getSheetByName(sheetName);
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_DATA);
   
-  if (!sheet) {
-    console.error(`❌ '${sheetName}' 시트를 찾을 수 없습니다.`);
+  if (!masterSheet) {
+    console.error("❌ '클라이언트 Master Data' 시트를 찾을 수 없습니다.");
     return {};
   }
 
-  const data = sheet.getDataRange().getValues();
+  const data = masterSheet.getDataRange().getValues();
   const clientMap = {};
 
-  // 1행(헤더: ID, 업체명) 제외하고 2행(인덱스 1)부터 순회
   for (let i = 1; i < data.length; i++) {
-    let rawSheetId = data[i][0] ? data[i][0].toString().trim() : ""; // A열: 시트 ID 또는 URL
-    const jpName = data[i][1] ? data[i][1].toString().trim() : "";    // B열: 일본어 업체명
+    const rawJpNameWithSama = data[i][2] ? data[i][2].toString().trim() : ""; // C열
+    const rawJpName = data[i][3] ? data[i][3].toString().trim() : "";         // D열
+    const rawKrName = data[i][4] ? data[i][4].toString().trim() : "";         // E열
+    const status = data[i][6] ? data[i][6].toString().trim() : "진행중";    // G열
+    let rawSheetId = data[i][11] ? data[i][11].toString().trim() : "";    // L열
 
-    if (!rawSheetId || !jpName) continue;
+    if (!rawSheetId || status === "계약종료" || status === "중단" || status === "OFF") {
+      continue;
+    }
 
-    // A열에 전체 URL을 붙여넣었을 경우 정규표현식으로 시트 ID만 추출
     if (rawSheetId.includes("/d/")) {
       const match = rawSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
       if (match) rawSheetId = match[1];
     }
 
-    // 일본어 업체명을 Key, 시트 ID를 Value로 저장
-    clientMap[jpName] = rawSheetId;
+    const baseNames = [rawJpNameWithSama, rawJpName, rawKrName].filter(Boolean);
+
+    baseNames.forEach(name => {
+      clientMap[name] = rawSheetId;
+      clientMap[name.replace(/\s+/g, '')] = rawSheetId;
+      
+      let clean = name.replace("クライアント名+様", "").replace(/様$/g, "").trim();
+      if (clean) {
+        clientMap[clean] = rawSheetId;
+        clientMap[clean + "様"] = rawSheetId;
+        clientMap[clean + " 様"] = rawSheetId;
+      }
+    });
   }
 
   return clientMap;
@@ -69,9 +144,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
   const lastRow = masterSheet.getLastRow();
   const data = masterSheet.getRange(1, 1, lastRow, masterSheet.getLastColumn()).getValues();
   
-  // 🚀 시트 기반 동적 클라이언트 매핑 적용
   const clientMap = getDynamicClientMap();
-  
   const updateBundles = {}; 
   const cleanTarget = targetClient ? targetClient.replace(/\s+/g, '') : null;
 
@@ -100,6 +173,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
   let currentProfile = "";
   let currentClients = [];
   let currentReports = [];
+  const cellsToHighlight = [];
 
   for (let i = 0; i < lastRow; i++) {
     const row = data[i];
@@ -132,55 +206,108 @@ function syncBloggerDataOptimized(startRow, targetClient) {
       
       if (articleUrl.includes("http")) {
         const sheetId = clientMap[storeName];
-        if (!updateBundles[sheetId]) updateBundles[sheetId] = [];
+        if (!updateBundles[sheetId]) {
+          updateBundles[sheetId] = {
+            clientName: storeName,
+            rows: []
+          };
+        }
         
-        updateBundles[sheetId].push([
+        updateBundles[sheetId].rows.push([
           scheduleDate, currentProfile, bloggerName, storeName,
           formatToShortDate(row[dateCol]), articleUrl, currentReports[j] || ""
         ]);
+
+        cellsToHighlight.push({ row: i + 1, col: urlCol + 1 });
       }
     }
   }
 
-  let totalCount = 0;
+  const resultList = [];
+
   for (const sheetId in updateBundles) {
-    totalCount += processBatchUpdate(sheetId, updateBundles[sheetId]);
+    const bundle = updateBundles[sheetId];
+    const count = processBatchUpdate(sheetId, bundle.rows);
+    if (count > 0) {
+      resultList.push({
+        clientName: bundle.clientName,
+        count: count,
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}`
+      });
+    }
   }
 
-  return totalCount;
+  if (cellsToHighlight.length > 0) {
+    cellsToHighlight.forEach(pos => {
+      masterSheet.getRange(pos.row, pos.col).setBackground("#e6f4ea");
+    });
+  }
+
+  return resultList;
 }
 
 /*********************************************************************************
- * 특정 시트에 모인 데이터를 한꺼번에 업데이트
+ * URL 정제 헬퍼 함수 (중복 비교 정밀도 향상)
+ *********************************************************************************/
+function cleanUrlForComparison(url) {
+  if (!url) return "";
+  return url.toString().trim()
+            .toLowerCase()
+            .replace(/^https?:\/\//i, '')
+            .replace(/^m\.blog\.naver\.com/i, 'blog.naver.com')
+            .replace(/\/$/, '');
+}
+
+/*********************************************************************************
+ * 특정 시트에 모인 데이터를 한꺼번에 업데이트 (날짜 타입 비교 오류 수정 버전)
  *********************************************************************************/
 function processBatchUpdate(sheetId, newRows) {
   try {
     const targetSs = SpreadsheetApp.openById(sheetId);
     const sheet = targetSs.getSheetByName(new Date().getFullYear() + "年") || targetSs.getSheets()[0];
     const lastRow = sheet.getLastRow();
-    const existingData = lastRow >= 2 ? sheet.getRange(1, 1, lastRow, 7).getValues() : [];
+    
+    // 💡 getValues() 대신 getDisplayValues()를 사용하여 화면에 보이는 텍스트로 정밀 비교
+    const existingData = lastRow >= 2 ? sheet.getRange(1, 1, lastRow, 7).getDisplayValues() : [];
     
     let updatedCount = 0;
     const toAppend = [];
 
-    newRows.forEach(rowData => {
-      let isFound = false;
-      for (let i = 0; i < existingData.length; i++) {
-        if (formatToShortDate(existingData[i][0]) === rowData[0] &&
-            String(existingData[i][2]).trim() === rowData[2] &&
-            String(existingData[i][3]).trim() === rowData[3] &&
-            String(existingData[i][5]).trim() === rowData[5]) {
-          
-          isFound = true;
-          if (String(existingData[i][6]).trim() !== String(rowData[6]).trim() || 
-              String(existingData[i][4]).trim() !== String(rowData[4]).trim()) {
-            sheet.getRange(i + 1, 1, 1, 7).setValues([rowData]);
-            updatedCount++;
-          }
-          break;
-        }
+    // 기존 시트에 이미 작성된 포스팅 URL 맵 생성
+    const existingUrlMap = {};
+    for (let i = 0; i < existingData.length; i++) {
+      const existingUrlKey = cleanUrlForComparison(existingData[i][5]);
+      if (existingUrlKey) {
+        existingUrlMap[existingUrlKey] = {
+          rowIndex: i + 1,
+          rowValues: existingData[i]
+        };
       }
-      if (!isFound) toAppend.push(rowData);
+    }
+
+    newRows.forEach(rowData => {
+      const targetUrlKey = cleanUrlForComparison(rowData[5]); // articleUrl
+      
+      if (targetUrlKey && existingUrlMap[targetUrlKey]) {
+        // 1. 이미 동기화된 URL이 존재할 경우 -> 진짜 내용 변경이 있을 때만 업데이트
+        const match = existingUrlMap[targetUrlKey];
+        const oldRow = match.rowValues;
+        
+        const isChanged = 
+          formatToShortDate(oldRow[0]) !== formatToShortDate(rowData[0]) || // 일정 날짜
+          String(oldRow[2]).trim() !== String(rowData[2]).trim() ||         // 작성자
+          formatToShortDate(oldRow[4]) !== formatToShortDate(rowData[4]) || // 작성일
+          String(oldRow[6]).trim() !== String(rowData[6]).trim();           // 보고서 URL
+          
+        if (isChanged) {
+          sheet.getRange(match.rowIndex, 1, 1, 7).setValues([rowData]);
+          updatedCount++;
+        }
+        // 변경 사항이 없으면 아무 작업도 하지 않고 스킵 (0건 처리)
+      } else {
+        // 2. 레포트 시트에 없는 신규 URL만 추가
+        toAppend.push(rowData);
+      }
     });
 
     if (toAppend.length > 0) {
@@ -189,7 +316,7 @@ function processBatchUpdate(sheetId, newRows) {
     }
 
     const newLastRow = sheet.getLastRow();
-    if (newLastRow >= 2) {
+    if (newLastRow >= 2 && updatedCount > 0) {
       sheet.getRange(2, 1, newLastRow - 1, 7).sort([
         {column: 1, ascending: true}, 
         {column: 4, ascending: true}, 
@@ -199,7 +326,7 @@ function processBatchUpdate(sheetId, newRows) {
 
     return updatedCount;
   } catch (e) {
-    console.error("ID 확인 불가 시트 스킵: " + sheetId);
+    console.error("ID 확인 불가 시트 스킵: " + sheetId + " | 오류: " + e.message);
     return 0;
   }
 }
@@ -227,8 +354,8 @@ function fetchAndTranslateBlogTitles() {
   let successCount = 0;
   
   const targetColumns = [
-    { url: 9,  title: 11, jp: 12 }, // 1번 블로그 (I, K, L열)
-    { url: 23, title: 25, jp: 26 } // 2번 블로그 (W, Y, Z열)
+    { url: 9,  title: 11, jp: 12 },
+    { url: 23, title: 25, jp: 26 }
   ];
   
   for (let i = 0; i < numRows; i++) {
