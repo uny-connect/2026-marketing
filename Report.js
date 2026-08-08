@@ -25,36 +25,36 @@ function runSyncWithPrompt() {
 }
 
 /*********************************************************************************
- * [동적 매핑] 클라이언트 Master Data 시트에서 업체별 시트 ID Map 동적 생성
+ * [동적 매핑] 'report id' 시트에서 (A열: ID/URL, B열: 일본어 업체명) 읽어오기
  *********************************************************************************/
 function getDynamicClientMap() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_DATA);
-  if (!masterSheet) {
-    console.error("❌ '클라이언트 Master Data' 시트를 찾을 수 없습니다.");
+  const sheetName = (CONFIG.SHEETS && CONFIG.SHEETS.REPORT_ID) ? CONFIG.SHEETS.REPORT_ID : "report id";
+  const sheet = ss.getSheetByName(sheetName);
+  
+  if (!sheet) {
+    console.error(`❌ '${sheetName}' 시트를 찾을 수 없습니다.`);
     return {};
   }
 
-  const data = masterSheet.getDataRange().getValues();
+  const data = sheet.getDataRange().getValues();
   const clientMap = {};
 
-  // 헤더(1행) 제외하고 2행부터 순회
+  // 1행(헤더: ID, 업체명) 제외하고 2행(인덱스 1)부터 순회
   for (let i = 1; i < data.length; i++) {
-    const jpName = data[i][2] ? data[i][2].toString().trim() : ""; // C열: 일문명
-    const krName = data[i][4] ? data[i][4].toString().trim() : ""; // E열: 한글명
-    let rawSheetId = data[i][5] ? data[i][5].toString().trim() : ""; // F열: 시트 ID 또는 URL
+    let rawSheetId = data[i][0] ? data[i][0].toString().trim() : ""; // A열: 시트 ID 또는 URL
+    const jpName = data[i][1] ? data[i][1].toString().trim() : "";    // B열: 일본어 업체명
 
-    if (!rawSheetId) continue;
+    if (!rawSheetId || !jpName) continue;
 
-    // URL 형식일 경우 정규표현식으로 시트 ID만 정밀 추출
+    // A열에 전체 URL을 붙여넣었을 경우 정규표현식으로 시트 ID만 추출
     if (rawSheetId.includes("/d/")) {
       const match = rawSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
       if (match) rawSheetId = match[1];
     }
 
-    // 일문명과 한글명 모두 Map 키값으로 등록 (둘 중 어떤 이름이 들어와도 인식 가능)
-    if (jpName) clientMap[jpName] = rawSheetId;
-    if (krName) clientMap[krName] = rawSheetId;
+    // 일본어 업체명을 Key, 시트 ID를 Value로 저장
+    clientMap[jpName] = rawSheetId;
   }
 
   return clientMap;
