@@ -25,6 +25,42 @@ function runSyncWithPrompt() {
 }
 
 /*********************************************************************************
+ * [동적 매핑] 클라이언트 Master Data 시트에서 업체별 시트 ID Map 동적 생성
+ *********************************************************************************/
+function getDynamicClientMap() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_DATA);
+  if (!masterSheet) {
+    console.error("❌ '클라이언트 Master Data' 시트를 찾을 수 없습니다.");
+    return {};
+  }
+
+  const data = masterSheet.getDataRange().getValues();
+  const clientMap = {};
+
+  // 헤더(1행) 제외하고 2행부터 순회
+  for (let i = 1; i < data.length; i++) {
+    const jpName = data[i][2] ? data[i][2].toString().trim() : ""; // C열: 일문명
+    const krName = data[i][4] ? data[i][4].toString().trim() : ""; // E열: 한글명
+    let rawSheetId = data[i][5] ? data[i][5].toString().trim() : ""; // F열: 시트 ID 또는 URL
+
+    if (!rawSheetId) continue;
+
+    // URL 형식일 경우 정규표현식으로 시트 ID만 정밀 추출
+    if (rawSheetId.includes("/d/")) {
+      const match = rawSheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (match) rawSheetId = match[1];
+    }
+
+    // 일문명과 한글명 모두 Map 키값으로 등록 (둘 중 어떤 이름이 들어와도 인식 가능)
+    if (jpName) clientMap[jpName] = rawSheetId;
+    if (krName) clientMap[krName] = rawSheetId;
+  }
+
+  return clientMap;
+}
+
+/*********************************************************************************
  * 최적화된 메인 동기화 로직
  *********************************************************************************/
 function syncBloggerDataOptimized(startRow, targetClient) {
@@ -33,7 +69,9 @@ function syncBloggerDataOptimized(startRow, targetClient) {
   const lastRow = masterSheet.getLastRow();
   const data = masterSheet.getRange(1, 1, lastRow, masterSheet.getLastColumn()).getValues();
   
-  const clientMap = CONFIG.CLIENT_MAP;
+  // 🚀 시트 기반 동적 클라이언트 매핑 적용
+  const clientMap = getDynamicClientMap();
+  
   const updateBundles = {}; 
   const cleanTarget = targetClient ? targetClient.replace(/\s+/g, '') : null;
 
@@ -167,7 +205,7 @@ function processBatchUpdate(sheetId, newRows) {
 }
 
 /*********************************************************************************
- * [관리자 기능] 블로그 타이틀 자동 추출 (반복 로직 구조 최적화 완료)
+ * [관리자 기능] 블로그 타이틀 자동 추출
  *********************************************************************************/
 function fetchAndTranslateBlogTitles() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -188,7 +226,6 @@ function fetchAndTranslateBlogTitles() {
   
   let successCount = 0;
   
-  // 💡 [압축 포인트] 1번 블로그와 2번 블로그의 [URL열, 타이틀열, JP열] 구조를 배열로 정의
   const targetColumns = [
     { url: 9,  title: 11, jp: 12 }, // 1번 블로그 (I, K, L열)
     { url: 23, title: 25, jp: 26 } // 2번 블로그 (W, Y, Z열)
@@ -197,7 +234,6 @@ function fetchAndTranslateBlogTitles() {
   for (let i = 0; i < numRows; i++) {
     let currentRow = startRow + i;
     
-    // 반복되던 코드를 하나의 루프로 통합
     targetColumns.forEach(cols => {
       let url = sheet.getRange(currentRow, cols.url).getValue().toString().trim();
       if (url.includes("blog.naver.com")) {
