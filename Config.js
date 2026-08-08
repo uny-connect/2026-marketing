@@ -8,7 +8,8 @@ const CONFIG = {
     JAPAN_SCHEDULE: "2026スケジュール",
     CALENDAR_BOT: "캘린더봇",
     REPORT: "2026_보고서",
-    MASTER_DATA: "Master_Data"
+    MASTER_DATA: "Master_Data",
+    REPORT_ID: "report id"
   },
   
   // 구글 캘린더 이름 정리
@@ -68,7 +69,8 @@ const CONFIG = {
 
     "博多焼肉ハチハチ博多本店様": "1YO-UtxEVivfRczGEj26AEb8yX5FcHnwylapoWix9gkA",
     "博多焼肉 HACHI HACHI 大名店様": "1YO-UtxEVivfRczGEj26AEb8yX5FcHnwylapoWix9gkA",
-    "焼肉 HACHI HACHI ソラリア店様": "1YO-UtxEVivfRczGEj26AEb8yX5FcHnwylapoWix9gkA",
+    "焼肉 HACHI HACHI 88 天神ソラリア店様": "1YO-UtxEVivfRczGEj26AEb8yX5FcHnwylapoWix9gkA",
+    
 
     "IMURI様": "1v318TLg-v2IOnNyKY8G_GKS9jbhgR7laRXXyHwqwAAk",
 
