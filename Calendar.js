@@ -1,5 +1,5 @@
 /*********************************************************************************
- * [일본 취재 등록봇] 2026スケジュール 자동화 시스템 (최적화 버전)
+ * [일본 취재 등록봇] 2026スケジュール 자동화 시스템 (마지막 날 제외 버전)
  *********************************************************************************/
 function checkAndRegisterSchedules() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -8,7 +8,7 @@ function checkAndRegisterSchedules() {
   const calendars = CalendarApp.getCalendarsByName(calendarName);
   
   if (!sheet || calendars.length === 0) {
-    SpreadsheetApp.getUi().alert("시트명이나 캘린더명을 확인해주세요.");
+    showAlertSafely("시트명이나 캘린더명을 확인해주세요.");
     return;
   }
 
@@ -17,43 +17,52 @@ function checkAndRegisterSchedules() {
   today.setHours(0, 0, 0, 0); 
   const year = 2026;
 
+  // C, I, O, U, AA, AG, AM 열 (시트 기준 3, 9, 15, 21, 27, 33, 39열)
   const startCols = [3, 9, 15, 21, 27, 33, 39]; 
-  const startRows = [51, 53, 63, 74, 76, 86, 95, 97, 108, 116, 118, 137, 158, 179, 200, 221, 242, 263, 284]; 
 
-  // 🚀 시트 데이터 전체를 2차원 배열로 한 번에 가져와서 API 호출 횟수를 획기적으로 축소
   const sheetData = sheet.getDataRange().getDisplayValues();
+  let registerCount = 0;
 
-  startRows.forEach(baseRow => {
-    startCols.forEach(baseCol => {
-      // 배열 인덱스 변환 (0-based)
-      const rowIdx = baseRow - 1;
-      const colIdx = baseCol - 1;
+  // M/D 또는 M/D-D 형식 패턴 감지
+  const dateRegex = /^(\d{1,2})\/(\d{1,2})(-\d{1,2})?$/;
 
-      if (rowIdx >= sheetData.length || colIdx >= sheetData[0].length) return;
+  startCols.forEach(baseCol => {
+    const colIdx = baseCol - 1;
+
+    for (let rowIdx = 0; rowIdx < sheetData.length; rowIdx++) {
+      if (colIdx >= sheetData[rowIdx].length) continue;
 
       const dateRaw = sheetData[rowIdx][colIdx].trim();
-      if (!dateRaw || !dateRaw.includes('/')) return;
+      if (!dateRegex.test(dateRaw)) continue;
 
       try {
         const parts = dateRaw.split('/');
-        const month = parseInt(parts[0]);
+        const month = parseInt(parts[0], 10);
         const dayParts = parts[1].split('-');
-        const startDay = parseInt(dayParts[0]);
-        const endDay = parseInt(dayParts[1] || dayParts[0]);
+        const startDay = parseInt(dayParts[0], 10);
+        const endDay = parseInt(dayParts[1] || dayParts[0], 10);
 
         const startDate = new Date(year, month - 1, startDay);
-        const endDate = new Date(year, month - 1, endDay);
+        
+        // 💡 마지막 날 제외 처리: 9/9-12라면 11일까지만 등록 (시작일과 종료일이 같으면 당일 등록)
+        let actualEndDay = endDay;
+        if (endDay > startDay) {
+          actualEndDay = endDay - 1;
+        }
+        const calendarEndDate = new Date(year, month - 1, actualEndDay);
+
         const diffDays = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
 
-        if (diffDays <= 14 && diffDays >= -1) {
+        // 오늘 기준 -1일(어제)부터 30일 이내의 일정만 등록
+        if (diffDays <= 30 && diffDays >= -1) {
           let staffList = [];
           let dailySchedules = {}; 
           let lastDay = startDay + "日"; 
           dailySchedules[lastDay] = [];
 
-          // 메모리에서 25행 x 4열 데이터 슬라이스 추출
+          // 날짜 행 바로 아래부터 최대 25행 내용 추출
           const contentData = [];
-          for (let r = 0; r < 25; r++) {
+          for (let r = 1; r <= 25; r++) {
             const currR = rowIdx + r;
             if (currR < sheetData.length) {
               const rowVals = [];
@@ -65,7 +74,7 @@ function checkAndRegisterSchedules() {
             }
           }
           
-          contentData.forEach((row, index) => {
+          contentData.forEach((row) => {
             let col1 = row[0].toString().trim(); 
             let col2 = row[1].toString().trim(); 
             let col3 = row[2].toString().trim(); 
@@ -73,7 +82,7 @@ function checkAndRegisterSchedules() {
 
             let onlyNum = col1.replace(/[^0-9]/g, "");
             if (onlyNum !== "" && col1.length <= 3) {
-              let dayNum = parseInt(onlyNum);
+              let dayNum = parseInt(onlyNum, 10);
               if (dayNum >= 1 && dayNum <= 31) {
                 lastDay = dayNum + "日";
                 if (!dailySchedules[lastDay]) dailySchedules[lastDay] = [];
@@ -81,9 +90,10 @@ function checkAndRegisterSchedules() {
             }
 
             const skipWords = ["名前", "URL", "空港", "備考", "No", "店名", "순번"];
-            if (index === 0 || skipWords.includes(col1) || col1.includes('/')) return;
+            if (skipWords.includes(col1) || col1.includes('/')) return;
 
-            if (col1 !== "" && isNaN(parseInt(col1.replace(/[^0-9]/g, "")))) {
+            // 담당자/스태프 및 비행기 착륙 정보 추출
+            if (col1 !== "" && isNaN(parseInt(col1.replace(/[^0-9]/g, ""), 10))) {
               let staffName = col1;
               const arrivalKeywords = ["着陸", "🛬", "🛫", "離陸", "착륙", "이륙"];
               const hasArrivalInfo = arrivalKeywords.some(kw => col2.includes(kw));
@@ -95,6 +105,7 @@ function checkAndRegisterSchedules() {
               if (staffList.indexOf(staffName) === -1) staffList.push(staffName);
             }
 
+            // 매장 일정 수집
             if (col4 !== "" && col4 !== "備考" && col4 !== "店名") {
               let circleNo = toCircleNumberExtended(col3); 
               let timeStr = "";
@@ -111,7 +122,7 @@ function checkAndRegisterSchedules() {
           });
 
           let scheduleParts = [];
-          let sortedDays = Object.keys(dailySchedules).sort((a, b) => parseInt(a) - parseInt(b));
+          let sortedDays = Object.keys(dailySchedules).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
           
           sortedDays.forEach(dayKey => {
             if (dailySchedules[dayKey].length > 0) {
@@ -123,7 +134,8 @@ function checkAndRegisterSchedules() {
           const spacer = "                    "; 
           const finalTitle = `[韓国ブロガー招聘] ${dateRaw}${staffInfo}${spacer}${scheduleParts.join(spacer)}`;
 
-          for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          // 💡 calendarEndDate(마지막 전날)까지만 루프 생성
+          for (let d = new Date(startDate); d <= calendarEndDate; d.setDate(d.getDate() + 1)) {
             const currentDayStart = new Date(d);
             currentDayStart.setHours(7, 0, 0); 
             const currentDayEnd = new Date(d);
@@ -132,13 +144,28 @@ function checkAndRegisterSchedules() {
             const existingEvents = calendar.getEvents(currentDayStart, currentDayEnd, {search: `[韓国ブロガー招聘] ${dateRaw}`});
             if (existingEvents.length === 0) {
               calendar.createEvent(finalTitle, currentDayStart, currentDayEnd, { description: "" });
+              registerCount++;
             }
           }
         }
-      } catch(e) { console.log(e.message); }
-    });
+      } catch(e) { 
+        console.log(`[오류] 행 ${rowIdx+1}: ${e.message}`); 
+      }
+    }
   });
-  SpreadsheetApp.getUi().alert("착륙 정보가 포함된 일정이 등록되었습니다.");
+
+  showAlertSafely(`일정 동기화가 완료되었습니다. (신규 등록: ${registerCount}건)`);
+}
+
+/**
+ * 트리거 실행(UI 없음)과 수동 실행(UI 있음) 모두 안전하게 처리하는 알림 함수
+ */
+function showAlertSafely(msg) {
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch (e) {
+    console.log("[트리거 자동 실행 로그] " + msg);
+  }
 }
 
 /**
@@ -148,7 +175,7 @@ function toCircleNumberExtended(num) {
   if (!num) return "";
   let raw = num.toString().trim();
   if (raw.includes('.') || raw.includes('-')) return `[${raw}] `;
-  let n = parseInt(raw.replace(/[^0-9]/g, ""));
+  let n = parseInt(raw.replace(/[^0-9]/g, ""), 10);
   if (isNaN(n) || n <= 0) return ""; 
   if (n >= 1 && n <= 10) return String.fromCharCode(0x2460 + n - 1) + " ";
   return `[${n}] `; 
@@ -160,17 +187,16 @@ function toCircleNumberExtended(num) {
 function createCoverageSchedules() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEETS.CALENDAR_BOT);
-  const ui = SpreadsheetApp.getUi();
 
   if (!sheet) {
-    ui.alert("❌ '캘린더봇' 시트를 찾을 수 없습니다.");
+    showAlertSafely("❌ '캘린더봇' 시트를 찾을 수 없습니다.");
     return;
   }
 
   const calendarName = CONFIG.CALENDARS.COVERAGE; 
   const calendars = CalendarApp.getCalendarsByName(calendarName);
   if (calendars.length === 0) {
-    ui.alert(`❌ '${calendarName}' 캘린더를 찾을 수 없습니다.`);
+    showAlertSafely(`❌ '${calendarName}' 캘린더를 찾을 수 없습니다.`);
     return;
   }
   const calendar = calendars[0];
@@ -186,20 +212,16 @@ function createCoverageSchedules() {
     if (status === "완료" || !title || isNaN(startDate.getTime())) continue;
 
     try {
-      // 1. 하루 전 알람 일정 (당일 오전 9시 알람)
       let alarmDayBefore = new Date(startDate);
       alarmDayBefore.setDate(startDate.getDate() - 1);
       createAtNineAM(calendar, `[알람] ${title} 하루 전`, alarmDayBefore, alarmDayBefore);
 
-      // 2. 메인 취재 일정 (시작일 ~ 종료일, 오전 9시 알람)
       createAtNineAM(calendar, title, startDate, endDate);
 
-      // 3. 마감 1주일 전 알람 (+8일, 당일 오전 9시 알람)
       let deadlineOneWeek = new Date(endDate);
       deadlineOneWeek.setDate(endDate.getDate() + 8);
       createAtNineAM(calendar, `${title} 마감 1주일전`, deadlineOneWeek, deadlineOneWeek);
 
-      // 4. 마감 당일 알람 (+16일, 당일 오전 9시 알람)
       let deadlineFinal = new Date(deadlineOneWeek);
       deadlineFinal.setDate(deadlineOneWeek.getDate() + 8);
       createAtNineAM(calendar, `${title} 마감 당일`, deadlineFinal, deadlineFinal);
@@ -210,7 +232,7 @@ function createCoverageSchedules() {
       console.log(`${i+1}행 등록 중 오류: ${e.message}`);
     }
   }
-  ui.alert(`✅ 총 ${count}건의 취재 세트가 당일 오전 09:00 알람 기준으로 등록되었습니다.`);
+  showAlertSafely(`✅ 총 ${count}건의 취재가 구글캘린더에 등록되었습니다.`);
 }
 
 /**
@@ -229,11 +251,21 @@ function createAtNineAM(calendar, title, startD, endD) {
 }
 
 /**
- * 매일 새벽 자동 실행 트리거 생성
+ * 매일 새벽 자동 실행 트리거 등록 함수
  */
 function createJapanTripTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(t => { if(t.getHandlerFunction() === 'checkAndRegisterSchedules') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('checkAndRegisterSchedules').timeBased().everyDays(1).atHour(4).create();
-  SpreadsheetApp.getUi().alert("매일 새벽 4시 자동 확인 설정 완료!");
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'checkAndRegisterSchedules') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger('checkAndRegisterSchedules')
+    .timeBased()
+    .everyDays(1)
+    .atHour(4)
+    .create();
+
+  showAlertSafely('✅ 일본 취재 등록봇의 매일 새벽 자동 실행 트리거가 정상 설정되었습니다.');
 }
