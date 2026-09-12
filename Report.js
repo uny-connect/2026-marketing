@@ -239,7 +239,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
 
   if (cellsToHighlight.length > 0) {
     cellsToHighlight.forEach(pos => {
-      masterSheet.getRange(pos.row, pos.col).setBackground("#e6f4ea");
+      masterSheet.getRange(pos.row, pos.col).setBackground("#c1e1c1");
     });
   }
 
