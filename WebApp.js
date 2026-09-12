@@ -17,15 +17,21 @@ function verifyCode(inputCode) {
   const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_DATA); 
   if (!sheet) return { success: false, message: "오류: 스케줄 시트를 찾을 수 없습니다." };
   
-  const nameMap = {};
-  if (masterSheet) {
-    const masterData = masterSheet.getDataRange().getValues();
-    for (let m = 0; m < masterData.length; m++) {
-      let jpName = masterData[m][2] ? masterData[m][2].toString().trim() : ""; 
-      let krName = masterData[m][4] ? masterData[m][4].toString().trim() : ""; 
-      if (jpName && krName) nameMap[jpName] = krName;
+  // WebApp.js 의 verifyCode 함수 내부 (상단 Master Data 로딩 영역)
+const nameMap = {};
+if (masterSheet) {
+  const masterData = masterSheet.getDataRange().getValues();
+  for (let m = 0; m < masterData.length; m++) {
+    let jpNameWithSama = masterData[m][2] ? masterData[m][2].toString().trim() : ""; // C열
+    let jpName = masterData[m][3] ? masterData[m][3].toString().trim() : "";         // D열
+    let krName = masterData[m][4] ? masterData[m][4].toString().trim() : "";         // E열
+    
+    if (krName) {
+      if (jpNameWithSama) nameMap[jpNameWithSama] = krName;
+      if (jpName) nameMap[jpName] = krName;
     }
   }
+}
 
   const data = sheet.getDataRange().getValues();
   const lastCol = sheet.getLastColumn();
