@@ -136,23 +136,27 @@ function getDynamicClientMap() {
 }
 
 /*********************************************************************************
- * 최적화된 메인 동기화 로직
+ * 최적화된 메인 동기화 로직 (열 동적 확장 대응 버전)
  *********************************************************************************/
 function syncBloggerDataOptimized(startRow, targetClient) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_SCHEDULE); 
   const lastRow = masterSheet.getLastRow();
-  const data = masterSheet.getRange(1, 1, lastRow, masterSheet.getLastColumn()).getValues();
+  const lastCol = masterSheet.getLastColumn();
+  const data = masterSheet.getRange(1, 1, lastRow, lastCol).getValues();
   
+  // 💡 I열(인덱스 8)부터 3열 단위로 매장 슬롯 수 자동 계산 (기존 10개 -> 11개 이상 자동 대응)
+  const maxClients = Math.max(1, Math.floor((lastCol - 8) / 3));
+
   const clientMap = getDynamicClientMap();
   const updateBundles = {}; 
   const cleanTarget = targetClient ? targetClient.replace(/\s+/g, '') : null;
 
   function preScanReports(hIdx) {
-    let reports = Array(10).fill("");
+    let reports = Array(maxClients).fill("");
     for (let k = hIdx; k < Math.min(hIdx + 30, lastRow); k++) {
       if (data[k][2] && data[k][2].toString().trim() === "報告書作成") { 
-        for (let j = 0; j < 10; j++) {
+        for (let j = 0; j < maxClients; j++) {
           let reportCol = 8 + (j * 3); 
           let rUrl = data[k][reportCol] ? data[k][reportCol].toString().trim() : "";
           
@@ -182,7 +186,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
       scheduleDate = formatToShortDate(row[2]); 
       currentProfile = row[3] ? row[3].toString().trim() : ""; 
       currentClients = [];
-      for (let j = 0; j < 10; j++) {
+      for (let j = 0; j < maxClients; j++) {
         currentClients.push(row[9 + (j * 3)] ? row[9 + (j * 3)].toString().trim() : ""); 
       }
       currentReports = preScanReports(headerIdx);
@@ -194,7 +198,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
     const bloggerName = row[2] ? row[2].toString().trim() : ""; 
     if (!bloggerName || bloggerName === "報告書作成" || bloggerName.includes("報告") || bloggerName.includes("BLOG") || bloggerName.includes("REPORT")) continue;
 
-    for (let j = 0; j < 10; j++) {
+    for (let j = 0; j < maxClients; j++) {
       const storeName = currentClients[j];
       if (!storeName || !clientMap[storeName]) continue;
       if (cleanTarget && storeName.replace(/\s+/g, '') !== cleanTarget) continue;
@@ -379,7 +383,7 @@ function fetchAndTranslateBlogTitles() {
 }
 
 /*********************************************************************************
- * 네이버 블로그 제목 추출 내부 함수
+ * 네이버 블로그 제목 추출 내부 함수 (따옴표 끊김 방지 및 실제 제목 우선 추출 버전)
  *********************************************************************************/
 function getNaverBlogRealTitle(url) {
   let blogId = ""; let logNo = "";
@@ -396,12 +400,76 @@ function getNaverBlogRealTitle(url) {
   try {
     let response = UrlFetchApp.fetch(targetUrl, { muteHttpExceptions: true });
     let html = response.getContentText();
-    let titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) || html.match(/<title>([^<]+)<\/title>/i);
-                     
-    if (titleMatch) {
-      let cleanTitle = titleMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&times;/g, "×"); 
-      return cleanTitle.replace(" : 네이버 블로그", "").trim();
+    let rawTitle = "";
+
+    // 1순위: 스마트에디터 ONE 실제 본문 타이틀 영역 (따옴표로 끊어지지 않음)
+    let bodyTitleMatch = html.match(/<div[^>]*class=["'][^"']*(?:se_title|se-title-text)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+                         html.match(/<h3[^>]*class=["'][^"']*(?:se_textarea|title_text)[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i) ||
+                         html.match(/<span[^>]*class=["'][^"']*pcol1[^"']*itemSubjectBoldfont[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+
+    if (bodyTitleMatch) {
+      // HTML 내부 태그 제거 (span, p 등)
+      rawTitle = bodyTitleMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+
+    // 2순위: og:title 메타 태그 (큰따옴표/작은따옴표 모두 대응)
+    if (!rawTitle) {
+      let ogMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=(["'])(.*?)\1/i) ||
+                    html.match(/<meta[^>]+content=(["'])(.*?)\1[^>]+property=["']og:title["']/i);
+      if (ogMatch) {
+        rawTitle = ogMatch[2];
+      }
+    }
+
+    // 3순위: <title> 태그
+    if (!rawTitle) {
+      let titleTagMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (titleTagMatch) {
+        rawTitle = titleTagMatch[1];
+      }
+    }
+
+    if (rawTitle) {
+      let cleanTitle = rawTitle;
+
+      // 💡 HTML 엔티티 완벽 치환
+      const entityMap = {
+        '&lsquo;': '‘',
+        '&rsquo;': '’',
+        '&ldquo;': '“',
+        '&rdquo;': '”',
+        '&sbquo;': '‚',
+        '&bdquo;': '„',
+        '&quot;': '"',
+        '&apos;': "'",
+        '&#39;': "'",
+        '&amp;': '&',
+        '&lt;': '<',
+        '&gt;': '>',
+        '&times;': '×',
+        '&hellip;': '…',
+        '&middot;': '·',
+        '&nbsp;': ' '
+      };
+
+      for (const [entity, char] of Object.entries(entityMap)) {
+        cleanTitle = cleanTitle.split(entity).join(char);
+      }
+
+      // 숫자 엔티티 (10진수/16진수) 복원
+      cleanTitle = cleanTitle.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+      cleanTitle = cleanTitle.replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+      // 불필요한 줄바꿈 및 네이버 접미사 제거
+      cleanTitle = cleanTitle.replace(/\r?\n|\r/g, ' ')
+                             .replace(/\s+/g, ' ')
+                             .replace(" : 네이버 블로그", "")
+                             .trim();
+
+      return cleanTitle;
     }
     return "";
-  } catch (e) { return ""; }
+  } catch (e) { 
+    return ""; 
+  }
 }
