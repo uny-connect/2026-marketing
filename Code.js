@@ -10,16 +10,16 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   
-  ui.createMenu('🤖 취재 알람 등록봇')
-    .addItem('기존 취재 캘린더에 보내기', 'createCoverageSchedules')
+  ui.createMenu('🤖 구글 캘린더봇')
+    .addItem('구글 캘린더에 보내기', 'createCoverageSchedules')
     .addToUi();
 
-  ui.createMenu('📅 일본 취재 등록봇')
+  ui.createMenu('📅 일본 취재 스케줄 등록봇')
     .addItem('지금 즉시 일정 등록', 'checkAndRegisterSchedules')
     .addItem('매일 새벽 자동 실행 설정', 'createJapanTripTrigger')
     .addToUi();
 
-  ui.createMenu('🚀 보고서 자동화')
+  ui.createMenu('🚀 업체별 보고서')
     .addItem('업체별 시트 동기화 (행 지정)', 'runSyncWithPrompt')
     .addToUi();
 
@@ -28,6 +28,8 @@ function onOpen() {
     .addItem('2.선택한 셀에 접속 코드 발급', 'generateCodesForSelection')
     .addItem('3.D열 자동 프로필 감지 센서 구동', 'setupProfileTrigger')
     .addItem('4.선택한 행 블로그 타이틀 자동 추출/번역', 'fetchAndTranslateBlogTitles')
+    .addSeparator()
+    .addItem('📊 14일 조회수 차트(PNG) 일괄 생성', 'generateBatchChartsFromSettings') // 🌟 추가된 메뉴
     .addToUi();
 }
 
