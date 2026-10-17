@@ -44,8 +44,8 @@ function generateBatchChartsFromSettings() {
     dataSheet.getRange(1, 1, 1, headers.length).setBackground("#0f172a").setFontColor("#ffffff").setFontWeight("bold");
   }
 
-  // 4. 최상위 루트 폴더 [14일차트] 확인 및 생성
-  const rootFolder = getOrCreateFolder("14일차트");
+  // 4. 최상위 루트 폴더 [14일차트] 확인 및 연결 (ID 기반 고정)
+  const rootFolder = getRootChartFolder();
 
   let processedCount = 0;
 
@@ -111,21 +111,54 @@ function processSingleBloggerChart(dataSheet, tripDate, clientName, bloggerName,
   const totalDays = 14;
   const targetTotal = targetAvg * totalDays;
 
-  // 1. 평균값 기준 ±10% 범위 난수 생성
-  const fluctuationRatio = 0.10;
+  // 1. 최대 720을 넘지 않으면서 자연스러운 일별 변동폭(유동적 한계치) 생성
+  const absoluteMaxGap = 700; // 절대 넘지 않는 안전 한계치
   let rawValues = [];
-  for (let d = 0; d < totalDays; d++) {
-    const randomPercent = (Math.random() * (fluctuationRatio * 2)) - fluctuationRatio;
-    const val = Math.max(1, targetAvg * (1 + randomPercent));
-    rawValues.push(val);
+  
+  // 첫날 기준값: 평균 대비 ±250 범위 내에서 무작위 시작
+  let currentVal = targetAvg + (Math.floor(Math.random() * 501) - 250);
+  rawValues.push(Math.max(10, currentVal));
+
+  for (let d = 1; d < totalDays; d++) {
+    // 평균에서 멀어질수록 서서히 평균 쪽으로 되돌아오려는 자연스러운 복원력
+    const biasToAvg = (targetAvg - currentVal) * 0.18;
+    
+    // 매일 변동폭 한계를 다르게 설정 (320 ~ 620 사이 유동 제어로 기계적 티 방지)
+    const dailyGapLimit = Math.floor(Math.random() * 300) + 320; 
+    
+    // -dailyGapLimit ~ +dailyGapLimit 범위 내 부드러운 스텝 생성
+    let step = (Math.random() * (dailyGapLimit * 2)) - dailyGapLimit + biasToAvg;
+    
+    // 절대 700을 넘지 않도록 제한
+    step = Math.max(-absoluteMaxGap, Math.min(absoluteMaxGap, Math.round(step)));
+    
+    currentVal += step;
+    rawValues.push(Math.max(10, currentVal));
   }
 
-  // 2. 정규화 (14일 평균 일치)
-  const rawSum = rawValues.reduce((acc, cur) => acc + cur, 0);
-  let normalizedValues = rawValues.map(v => Math.round((v / rawSum) * targetTotal));
-  
-  const currentSum = normalizedValues.reduce((acc, cur) => acc + cur, 0);
-  normalizedValues[totalDays - 1] += (targetTotal - currentSum);
+  // 2. 14일 총합 정밀 보정 (인위적인 갭 없이 고르게 분산)
+  let normalizedValues = [...rawValues];
+  let currentSum = normalizedValues.reduce((acc, cur) => acc + cur, 0);
+  let diff = targetTotal - currentSum;
+
+  let maxIterations = 5000;
+  while (diff !== 0 && maxIterations > 0) {
+    maxIterations--;
+    const step = diff > 0 ? 1 : -1;
+    const idx = Math.floor(Math.random() * totalDays);
+    const candidate = normalizedValues[idx] + step;
+
+    if (candidate < 10) continue;
+
+    // 인접 날짜와의 갭이 absoluteMaxGap(700) 이내인지 검증
+    const prevOk = (idx === 0) || Math.abs(candidate - normalizedValues[idx - 1]) <= absoluteMaxGap;
+    const nextOk = (idx === totalDays - 1) || Math.abs(candidate - normalizedValues[idx + 1]) <= absoluteMaxGap;
+
+    if (prevOk && nextOk) {
+      normalizedValues[idx] = candidate;
+      diff -= step;
+    }
+  }
 
   // 3. A열 기준 순차 행 계산 및 가로 데이터 기록 (A~S열)
   const aColValues = dataSheet.getRange("A:A").getValues();
@@ -234,9 +267,19 @@ function formatToYYMMDD(val) {
 }
 
 /**
- * [폴더 유틸] 최상위 폴더 가져오기 또는 생성
+ * [폴더 유틸] ID 기반 최상위 루트 폴더 가져오기 (폴더명 변경 시에도 영구 고정)
  */
-function getOrCreateFolder(folderName) {
+function getRootChartFolder() {
+  if (CONFIG.FOLDERS && CONFIG.FOLDERS.CHART_ROOT_ID) {
+    try {
+      return DriveApp.getFolderById(CONFIG.FOLDERS.CHART_ROOT_ID);
+    } catch (e) {
+      console.warn("폴더 ID 접근 실패: " + e.message);
+    }
+  }
+
+  // 예비 폴더 생성 로직
+  const folderName = "14일차트";
   const folders = DriveApp.getFoldersByName(folderName);
   if (folders.hasNext()) {
     return folders.next();
