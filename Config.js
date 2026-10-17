@@ -9,7 +9,6 @@ const CONFIG = {
     REPORT: "2026_보고서",
     MASTER_DATA: "Master_Data",
     REPORT_ID: "report id",
-    // 🌟 2026_보고서ver2 시트 적용
     CHART_SETTING: "2026_보고서ver2",
     CHART_DATA: "차트_데이터"
   },
@@ -17,5 +16,10 @@ const CONFIG = {
   CALENDARS: {
     JAPAN_TRIP: "韓国ブロガー取材",
     COVERAGE: "[알람]취재 스케줄"
+  },
+
+  // 💡 공유해주신 14일 차트 고유 루트 폴더 설정
+  FOLDERS: {
+    CHART_ROOT_ID: "12dHkyW_Xn_cYXtw_gJl1oUVTvUihMjap"
   }
 };
