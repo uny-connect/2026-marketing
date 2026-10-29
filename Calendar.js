@@ -53,8 +53,8 @@ function checkAndRegisterSchedules() {
 
         const diffDays = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
 
-        // 오늘 기준 -1일(어제)부터 30일 이내의 일정만 등록
-        if (diffDays <= 30 && diffDays >= -1) {
+        // 오늘 기준 -1일(어제)부터 시작일 N일 전(CONFIG.CALENDAR_LEAD_DAYS)부터 등록
+        if (diffDays <= CONFIG.CALENDAR_LEAD_DAYS && diffDays >= -1) {
           let staffList = [];
           let dailySchedules = {}; 
           let lastDay = startDay + "日"; 
@@ -141,9 +141,28 @@ function checkAndRegisterSchedules() {
             const currentDayEnd = new Date(d);
             currentDayEnd.setHours(22, 0, 0); 
 
-            const existingEvents = calendar.getEvents(currentDayStart, currentDayEnd, {search: `[韓国ブロガー招聘] ${dateRaw}`});
-            if (existingEvents.length === 0) {
-              calendar.createEvent(finalTitle, currentDayStart, currentDayEnd, { description: "" });
+            // 안건(시트 블록)마다 고유 키로 구분 → 같은 날짜에 안건이 여러 개여도 각각 따로 등록/갱신
+            const syncKey = `[sync] ${baseCol}:${rowIdx + 1}`;
+            const titlePrefix = `[韓国ブロガー招聘] ${dateRaw}`;
+            const dayEvents = calendar.getEvents(currentDayStart, currentDayEnd)
+              .filter(ev => ev.getTitle().indexOf("[韓国ブロガー招聘]") === 0);
+
+            let target = dayEvents.find(ev => ev.getDescription().indexOf(syncKey) !== -1);
+            if (!target) {
+              // 키 도입 이전에 등록된 일정은 날짜 문구가 정확히 일치할 때만 이어받음 ("11/1-3"이 "11/1-34" 등과 섞이지 않도록)
+              target = dayEvents.find(ev => {
+                const t = ev.getTitle();
+                return t.indexOf(titlePrefix) === 0 &&
+                       /^(\s|$)/.test(t.substring(titlePrefix.length)) &&
+                       ev.getDescription().indexOf("[sync]") === -1;
+              });
+            }
+
+            if (target) {
+              if (target.getTitle() !== finalTitle) target.setTitle(finalTitle);
+              if (target.getDescription() !== syncKey) target.setDescription(syncKey);
+            } else {
+              calendar.createEvent(finalTitle, currentDayStart, currentDayEnd, { description: syncKey });
               registerCount++;
             }
           }

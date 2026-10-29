@@ -17,6 +17,9 @@ const CONFIG = {
     COVERAGE: "[알람]취재 스케줄"
   },
 
+  // 일본 취재 일정을 캘린더에 등록하기 시작하는 시점 (취재 시작일 며칠 전부터)
+  CALENDAR_LEAD_DAYS: 5,
+
   // 💡 공유해주신 14일 차트 고유 루트 폴더 설정
   FOLDERS: {
     CHART_ROOT_ID: "12dHkyW_Xn_cYXtw_gJl1oUVTvUihMjap"
