@@ -85,7 +85,9 @@ function saveSingleUrl(row, colIndex, url) {
   const dateCol = urlCol - 1;       
   const imgCol = urlCol + 1;        
 
-  sheet.getRange(row, urlCol).setValue(url);
+  const urlCell = sheet.getRange(row, urlCol);
+  const prevUrl = urlCell.getValue().toString().trim();
+  urlCell.setValue(url);
 
   let pubDate = "";
   let imgUrl = "";
@@ -107,6 +109,9 @@ function saveSingleUrl(row, colIndex, url) {
 
   if (pubDate) {
     sheet.getRange(row, dateCol).setValue(pubDate);
+  } else if (prevUrl && prevUrl !== url) {
+    // 다른 글로 교체됐는데 날짜를 못 가져온 경우 이전 글의 날짜가 남지 않도록 비움
+    sheet.getRange(row, dateCol).clearContent();
   }
 
   if (!imgUrl) imgUrl = "Main";
@@ -119,15 +124,8 @@ function saveSingleUrl(row, colIndex, url) {
  * [내부 기능] 네이버 블로그 상세 데이터 추출 (시간/분 정밀 역산 반영 버전)
  ***************************************************************************************************************/
 function getNaverBlogData(url) {
-  let blogId = ""; let logNo = "";
-  if (url.includes("PostView.naver") || url.includes("PostView.nhn")) {
-    let idMatch = url.match(/blogId=([^&]+)/); let logMatch = url.match(/logNo=([^&]+)/);
-    if (idMatch) blogId = idMatch[1]; if (logMatch) logNo = logMatch[1];
-  } else {
-    let parts = url.split("?")[0].replace("https://", "").replace("http://", "").split("/");
-    if (parts.length >= 3) { blogId = parts[1]; logNo = parts[2]; }
-  }
-  if (!blogId || !logNo) return { date: "", img: "Main", profileImg: "" };
+  const { blogId, logNo } = parseNaverBlogUrl(url);
+  if (!blogId || !logNo) return { date: "", img: "Main" };
   let targetUrl = "https://blog.naver.com/PostView.naver?blogId=" + blogId + "&logNo=" + logNo;
   try {
     let response = UrlFetchApp.fetch(targetUrl, { muteHttpExceptions: true });
@@ -136,18 +134,6 @@ function getNaverBlogData(url) {
     const postfileMatch = html.match(/(https?:\/\/postfiles\.pstatic\.net\/[^"']+)/);
     if (postfileMatch) { imgSrc = postfileMatch[1]; if (!imgSrc.includes("type=")) { imgSrc += (imgSrc.includes("?") ? "&" : "?") + "type=w966"; } } 
     else { let imgMatch = html.match(/<meta property="og:image" content="([^"]+)"/i); if (imgMatch) imgSrc = imgMatch[1]; }
-
-    let profileImgSrc = "";
-    let mobileUrl = "https://m.blog.naver.com/" + blogId;
-    let mResponse = UrlFetchApp.fetch(mobileUrl, { muteHttpExceptions: true, headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 10; K)" } });
-    let mHtml = mResponse.getContentText();
-    let profileMatch = mHtml.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i) || mHtml.match(/<meta\s+property=["']naverblog:profile_image["']\s+content=["']([^"']+)["']/i);
-    if (profileMatch) {
-      profileImgSrc = profileMatch[1];
-      if (!profileImgSrc.includes("buddy_profile") && !profileImgSrc.includes("static.naver")) {
-        profileImgSrc = profileImgSrc.includes("type=") ? profileImgSrc.replace(/type=[a-zA-Z0-9_]+/, "type=w3840") : profileImgSrc + "?type=w3840";
-      } else { profileImgSrc = "Main"; }
-    }
 
     let pubDate = ""; 
     let dateMatch = html.match(/property="article:published_time"\s*content="([^"]+)"/i);
@@ -196,8 +182,8 @@ function getNaverBlogData(url) {
         }
       }
     }
-    return { date: pubDate, img: imgSrc, profileImg: profileImgSrc || "Main" };
-  } catch (e) { 
-    return { date: "", img: "Main", profileImg: "Main" }; 
+    return { date: pubDate, img: imgSrc };
+  } catch (e) {
+    return { date: "", img: "Main" };
   }
 }

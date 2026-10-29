@@ -27,31 +27,10 @@ function onOpen() {
     .addItem('1.새 일정 블록(템플릿) 추가', 'copyTemplateBlock')
     .addItem('2.선택한 셀에 접속 코드 발급', 'generateCodesForSelection')
     .addItem('3.D열 자동 프로필 감지 센서 구동', 'setupProfileTrigger')
-    .addItem('4.선택한 행 블로그 타이틀 자동 추출/번역', 'fetchAndTranslateBlogTitles')
+    .addItem('4.선택한 행 블로그 타이틀 자동 추출', 'fetchBlogTitles')
     .addSeparator()
     .addItem('📊 14일 조회수 차트(PNG) 일괄 생성', 'generateBatchChartsFromSettings') // 🌟 추가된 메뉴
     .addToUi();
-}
-
-/******************************************************************************************************************
- * [공통 이벤트 핸들러] 프로젝트 내 유일한 실시간 편집 감지 라우터
- *****************************************************************************************************************/
-function onEdit(e) {
-  if (!e) return;
-  const sheet = e.source.getActiveSheet();
-  const sheetName = sheet.getName();
-  
-  // 1. 스케줄 관련 시트인 경우 -> D열 네이버 프로필 주소 자동 감지 센서 작동
-  if (sheetName.includes("Schedule") || sheetName.includes("スケジュール")) {
-    onEditBloggerUrl(e);
-  }
-  
-  // 2. 보고서 시트인 경우 (미사용 기능 - 안전을 위해 선언 여부 검사 후 실행)
-  if (sheetName === CONFIG.SHEETS.REPORT) {
-    if (typeof onEditAutoCommentTranslate === 'function') {
-      onEditAutoCommentTranslate(e);
-    }
-  }
 }
 
 /**
@@ -129,13 +108,19 @@ function setupProfileTrigger() {
 /******************************************************************************************************************
  * [내부 로직] D열 네이버 프로필 주소 자동 감지 상세 처리
  *****************************************************************************************************************/
-function onEditBloggerUrl(e) { 
-  const sheet = e.source.getActiveSheet(); 
-  const range = e.range; 
-  const editedCol = range.getColumn(); 
-  const editedRow = range.getRow(); 
-  
-  if (editedCol === 4 && editedRow > 2) { 
+function onEditBloggerUrl(e) {
+  if (!e || !e.range) return;
+  const sheet = e.range.getSheet();
+  const sheetName = sheet.getName();
+  // 스케줄 시트(2026_Schedule, 2026スケジュール 등)에서만 동작 (UrlFetch 권한이 필요하므로 설치형 트리거로만 실행)
+  if (!sheetName.includes("Schedule") && !sheetName.includes("スケジュール")) return;
+
+  const range = e.range;
+  if (range.getNumRows() > 1 || range.getNumColumns() > 1) return; // 다중 셀 붙여넣기는 무시
+  const editedCol = range.getColumn();
+  const editedRow = range.getRow();
+
+  if (editedCol === 4 && editedRow > 2) {
     const blogUrl = range.getValue().toString().trim(); 
     const profileCell = sheet.getRange(editedRow, 6); 
     
@@ -160,13 +145,8 @@ function onEditBloggerUrl(e) {
  * [내부 로직] 네이버 블로그 프로필 이미지 크롤링
  *****************************************************************************************************************/
 function getBloggerMainProfile(url) { 
-  let blogId = ""; 
-  if (url.includes("blog.naver.com")) { 
-    let parts = url.split("?")[0].replace("https://", "").replace("http://", "").split("/"); 
-    if (parts[0].includes("blog.naver.com") && parts[1]) { blogId = parts[1]; } 
-    else { let idMatch = url.match(/blogId=([^&]+)/); if (idMatch) blogId = idMatch[1]; } 
-  } 
-  if (!blogId) return ""; 
+  const blogId = parseNaverBlogUrl(url).blogId;
+  if (!blogId) return "";
   let targetUrl = "https://m.blog.naver.com/" + blogId; 
   try { 
     let response = UrlFetchApp.fetch(targetUrl, { muteHttpExceptions: true, headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 10; K)" } }); 
@@ -190,6 +170,26 @@ function formatToShortDate(val) {
   if (!val) return "";
   if (val instanceof Date) return Utilities.formatDate(val, Session.getScriptTimeZone(), "M/d");
   return val.toString().trim();
+}
+
+/****************************************************************************************************************
+ * [공통 유틸리티] 네이버 블로그 URL에서 blogId / logNo 추출
+ * (blog.naver.com/ID/글번호, PostView.naver?blogId=..&logNo=.. 형식 모두 대응)
+ ***************************************************************************************************************/
+function parseNaverBlogUrl(url) {
+  let blogId = "";
+  let logNo = "";
+  const idMatch = url.match(/blogId=([^&]+)/);
+  const logMatch = url.match(/logNo=([^&]+)/);
+  if (idMatch) blogId = idMatch[1];
+  if (logMatch) logNo = logMatch[1];
+
+  if (!blogId) {
+    const parts = url.split("?")[0].replace(/^https?:\/\//, "").split("/");
+    if (parts[1]) blogId = parts[1];
+    if (!logNo && parts[2]) logNo = parts[2];
+  }
+  return { blogId: blogId, logNo: logNo };
 }
 
 /****************************************************************************************************************

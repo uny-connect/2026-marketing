@@ -17,8 +17,20 @@ function runSyncWithPrompt() {
     return;
   }
   
+  // 동시에 두 번 실행되어 행이 중복 추가되는 것을 방지
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    ui.alert('⚠️ 이미 다른 동기화가 실행 중입니다. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+
   const startTime = new Date().getTime();
-  const syncResult = syncBloggerDataOptimized(startRow, targetClient);
+  let syncResult;
+  try {
+    syncResult = syncBloggerDataOptimized(startRow, targetClient);
+  } finally {
+    lock.releaseLock();
+  }
   const endTime = new Date().getTime();
   const duration = ((endTime - startTime) / 1000).toFixed(1);
 
@@ -37,6 +49,16 @@ function showSyncResultModal(resultList, startRow, duration) {
     listHtml = `<div style="color: #64748b; padding: 20px 0; text-align: center;">새롭게 추가되거나 변경된 데이터가 없습니다. (모두 이미 완료됨)</div>`;
   } else {
     resultList.forEach(item => {
+      if (item.error) {
+        listHtml += `
+        <div style="padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+          <strong style="color: #b91c1c; font-size: 14px;">❌ ${item.clientName}</strong>
+          <span style="background: #fee2e2; color: #b91c1c; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">접근 실패</span>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Master_Data의 시트 ID와 공유 권한을 확인해주세요.</div>
+        </div>
+      `;
+        return;
+      }
       totalCount += item.count;
       listHtml += `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
@@ -94,7 +116,7 @@ function getDynamicClientMap() {
   const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER_DATA);
   
   if (!masterSheet) {
-    console.error("❌ '클라이언트 Master Data' 시트를 찾을 수 없습니다.");
+    console.error("❌ '" + CONFIG.SHEETS.MASTER_DATA + "' 시트를 찾을 수 없습니다.");
     return {};
   }
 
@@ -200,7 +222,9 @@ function syncBloggerDataOptimized(startRow, targetClient) {
 
     for (let j = 0; j < maxClients; j++) {
       const storeName = currentClients[j];
-      if (!storeName || !clientMap[storeName]) continue;
+      // 공백 차이로 매칭이 실패하지 않도록 공백 제거 키로도 조회
+      const clientSheetId = storeName ? (clientMap[storeName] || clientMap[storeName.replace(/\s+/g, '')]) : "";
+      if (!clientSheetId) continue;
       if (cleanTarget && storeName.replace(/\s+/g, '') !== cleanTarget) continue;
 
       const dateCol = 8 + (j * 3); 
@@ -209,7 +233,7 @@ function syncBloggerDataOptimized(startRow, targetClient) {
       const articleUrl = row[urlCol] ? row[urlCol].toString().trim() : "";
       
       if (articleUrl.includes("http")) {
-        const sheetId = clientMap[storeName];
+        const sheetId = clientSheetId;
         if (!updateBundles[sheetId]) {
           updateBundles[sheetId] = {
             clientName: storeName,
@@ -222,30 +246,35 @@ function syncBloggerDataOptimized(startRow, targetClient) {
           formatToShortDate(row[dateCol]), articleUrl, currentReports[j] || ""
         ]);
 
-        cellsToHighlight.push({ row: i + 1, col: urlCol + 1 });
+        cellsToHighlight.push({ row: i + 1, col: urlCol + 1, sheetId: sheetId });
       }
     }
   }
 
   const resultList = [];
 
+  const failedSheetIds = {};
+
   for (const sheetId in updateBundles) {
     const bundle = updateBundles[sheetId];
-    const count = processBatchUpdate(sheetId, bundle.rows);
-    if (count > 0) {
-      resultList.push({
-        clientName: bundle.clientName,
-        count: count,
-        url: `https://docs.google.com/spreadsheets/d/${sheetId}`
-      });
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}`;
+    try {
+      const count = processBatchUpdate(sheetId, bundle.rows);
+      if (count > 0) {
+        resultList.push({ clientName: bundle.clientName, count: count, url: url });
+      }
+    } catch (e) {
+      failedSheetIds[sheetId] = true;
+      resultList.push({ clientName: bundle.clientName, count: 0, url: url, error: e.message });
     }
   }
 
-  if (cellsToHighlight.length > 0) {
-    cellsToHighlight.forEach(pos => {
+  // 동기화에 성공한 업체의 셀만 초록색으로 표시 (실패 업체는 표시하지 않음)
+  cellsToHighlight.forEach(pos => {
+    if (!failedSheetIds[pos.sheetId]) {
       masterSheet.getRange(pos.row, pos.col).setBackground("#c1e1c1");
-    });
-  }
+    }
+  });
 
   return resultList;
 }
@@ -330,15 +359,15 @@ function processBatchUpdate(sheetId, newRows) {
 
     return updatedCount;
   } catch (e) {
-    console.error("ID 확인 불가 시트 스킵: " + sheetId + " | 오류: " + e.message);
-    return 0;
+    console.error("업체 시트 처리 실패: " + sheetId + " | 오류: " + e.message);
+    throw e; // 호출한 쪽에서 실패 업체로 집계
   }
 }
 
 /*********************************************************************************
  * [관리자 기능] 블로그 타이틀 자동 추출
  *********************************************************************************/
-function fetchAndTranslateBlogTitles() {
+function fetchBlogTitles() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEETS.REPORT);
   if (!sheet) {
@@ -362,38 +391,40 @@ function fetchAndTranslateBlogTitles() {
     { url: 23, title: 25, jp: 26 }
   ];
   
+  // URL 열(I~Z 범위)을 한 번에 읽어 셀 단위 읽기 호출을 줄임
+  const firstCol = targetColumns[0].url;
+  const lastCol = targetColumns[targetColumns.length - 1].url;
+  const urlBlock = sheet.getRange(startRow, firstCol, numRows, lastCol - firstCol + 1).getValues();
+  let failCount = 0;
+
   for (let i = 0; i < numRows; i++) {
-    let currentRow = startRow + i;
-    
+    const currentRow = startRow + i;
+
     targetColumns.forEach(cols => {
-      let url = sheet.getRange(currentRow, cols.url).getValue().toString().trim();
+      const url = urlBlock[i][cols.url - firstCol].toString().trim();
       if (url.includes("blog.naver.com")) {
-        let title = getNaverBlogRealTitle(url); 
+        const title = getNaverBlogRealTitle(url);
         if (title) {
-          sheet.getRange(currentRow, cols.title).setValue(title); 
-          sheet.getRange(currentRow, cols.jp).setValue("");    
+          sheet.getRange(currentRow, cols.title).setValue(title);
+          sheet.getRange(currentRow, cols.jp).setValue(""); // 제목이 바뀌었으므로 기존 일본어 번역은 비움
+          successCount++;
+        } else {
+          failCount++;
         }
-        successCount++;
       }
     });
   }
-  
+
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert(`🎉 총 ${successCount}건의 한국어 타이틀 수집이 완료되었습니다!`);
+  const failMsg = failCount > 0 ? `\n(제목을 가져오지 못한 건: ${failCount}건)` : "";
+  SpreadsheetApp.getUi().alert(`🎉 총 ${successCount}건의 한국어 타이틀 수집이 완료되었습니다!${failMsg}`);
 }
 
 /*********************************************************************************
  * 네이버 블로그 제목 추출 내부 함수 (따옴표 끊김 방지 및 실제 제목 우선 추출 버전)
  *********************************************************************************/
 function getNaverBlogRealTitle(url) {
-  let blogId = ""; let logNo = "";
-  if (url.includes("PostView.naver") || url.includes("PostView.nhn")) {
-    let idMatch = url.match(/blogId=([^&]+)/); let logMatch = url.match(/logNo=([^&]+)/);
-    if (idMatch) blogId = idMatch[1]; if (logMatch) logNo = logMatch[1];
-  } else {
-    let parts = url.split("?")[0].replace("https://", "").replace("http://", "").split("/");
-    if (parts.length >= 3) { blogId = parts[1]; logNo = parts[2]; }
-  }
+  const { blogId, logNo } = parseNaverBlogUrl(url);
   if (!blogId || !logNo) return "";
 
   let targetUrl = "https://blog.naver.com/PostView.naver?blogId=" + blogId + "&logNo=" + logNo;

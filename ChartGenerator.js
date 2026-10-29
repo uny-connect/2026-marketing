@@ -136,29 +136,8 @@ function processSingleBloggerChart(dataSheet, tripDate, clientName, bloggerName,
     rawValues.push(Math.max(10, currentVal));
   }
 
-  // 2. 14일 총합 정밀 보정 (인위적인 갭 없이 고르게 분산)
-  let normalizedValues = [...rawValues];
-  let currentSum = normalizedValues.reduce((acc, cur) => acc + cur, 0);
-  let diff = targetTotal - currentSum;
-
-  let maxIterations = 5000;
-  while (diff !== 0 && maxIterations > 0) {
-    maxIterations--;
-    const step = diff > 0 ? 1 : -1;
-    const idx = Math.floor(Math.random() * totalDays);
-    const candidate = normalizedValues[idx] + step;
-
-    if (candidate < 10) continue;
-
-    // 인접 날짜와의 갭이 absoluteMaxGap(700) 이내인지 검증
-    const prevOk = (idx === 0) || Math.abs(candidate - normalizedValues[idx - 1]) <= absoluteMaxGap;
-    const nextOk = (idx === totalDays - 1) || Math.abs(candidate - normalizedValues[idx + 1]) <= absoluteMaxGap;
-
-    if (prevOk && nextOk) {
-      normalizedValues[idx] = candidate;
-      diff -= step;
-    }
-  }
+  // 2. 14일 총합 정밀 보정 (차이를 날짜 전체에 균등 분배 → 일별 변동 모양과 갭 유지)
+  const normalizedValues = normalizeToTotal(rawValues, targetTotal);
 
   // 3. A열 기준 순차 행 계산 및 가로 데이터 기록 (A~S열)
   const aColValues = dataSheet.getRange("A:A").getValues();
@@ -236,6 +215,55 @@ function processSingleBloggerChart(dataSheet, tripDate, clientName, bloggerName,
     existingFiles.next().setTrashed(true);
   }
   targetFolder.createFile(chartBlob);
+
+  // 8. PNG 저장 후 시트에 남은 차트 제거 (같은 버퍼를 참조하므로 남겨두면 모두 마지막 데이터로 바뀜)
+  dataSheet.getCharts().forEach(c => {
+    const info = c.getContainerInfo();
+    if (info.getAnchorRow() === nextRow && info.getAnchorColumn() === 20) {
+      dataSheet.removeChart(c);
+    }
+  });
+}
+
+/**
+ * [합계 보정] 값들의 총합이 targetTotal과 정확히 일치하도록 조정 (각 값 최소 10 유지)
+ * 차이를 움직일 수 있는 날짜들에 균등 분배(전체 이동)하므로 한 번에 수렴하고 일별 갭이 보존됨
+ */
+function normalizeToTotal(values, targetTotal) {
+  const MIN_VAL = 10;
+  const result = values.slice();
+  let diff = targetTotal - result.reduce((acc, cur) => acc + cur, 0);
+
+  for (let iter = 0; iter < 100 && diff !== 0; iter++) {
+    const movable = [];
+    for (let i = 0; i < result.length; i++) {
+      if (diff > 0 || result[i] > MIN_VAL) movable.push(i);
+    }
+    if (movable.length === 0) break;
+
+    let per = Math.trunc(diff / movable.length);
+    if (per === 0) {
+      // 남은 차이(14 미만)는 무작위 날짜에 ±1씩 분배
+      const sign = diff > 0 ? 1 : -1;
+      movable.sort(() => Math.random() - 0.5);
+      let remaining = Math.abs(diff);
+      for (let k = 0; k < movable.length && remaining > 0; k++) {
+        const idx = movable[k];
+        const cand = result[idx] + sign;
+        // 인접 날짜와의 갭이 700을 넘지 않는 경우에만 적용
+        const prevOk = idx === 0 || Math.abs(cand - result[idx - 1]) <= 700;
+        const nextOk = idx === result.length - 1 || Math.abs(cand - result[idx + 1]) <= 700;
+        if (prevOk && nextOk) {
+          result[idx] = cand;
+          remaining--;
+        }
+      }
+    } else {
+      movable.forEach(i => { result[i] = Math.max(MIN_VAL, result[i] + per); });
+    }
+    diff = targetTotal - result.reduce((acc, cur) => acc + cur, 0);
+  }
+  return result;
 }
 
 /**

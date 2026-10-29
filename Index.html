@@ -149,7 +149,7 @@
     .view-link:hover { opacity: 1; text-decoration: underline; }
 
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.2); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; vertical-align: middle; }
-    #btn-spinner { border: 2px solid rgba(15, 23, 42, 0.1); border-top-color: var(--primary); }
+    .btn-modify .spinner { border: 2px solid rgba(15, 23, 42, 0.1); border-top-color: var(--primary); }
     @keyframes spin { to { transform: rotate(360deg); } }
     
     #initial-loading { padding: 20px 0; font-size: 14px; color: var(--sub); }
@@ -285,6 +285,15 @@
       document.getElementById('login-box').classList.remove('hidden');
     }
 
+    function escapeHtml(str) {
+      return String(str == null ? "" : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function renderUrlForm() {
       const container = document.getElementById('url-form-container');
       let htmlStr = '';
@@ -299,7 +308,7 @@
           htmlStr += `
             <div class="client-item">
               <div class="client-header">
-                <label class="client-label"> ${client.name}</label>
+                <label class="client-label"> ${escapeHtml(client.name)}</label>
               </div>
               <input type="text" disabled placeholder="제외된 항목" style="padding:10px 14px; background-color: #f8fafc; border: 1px dashed #e2e8f0; text-align:center; color:var(--disabled-text); border-radius:10px; font-size:14px; width:100%;">
             </div>
@@ -309,16 +318,17 @@
           let btnClass = client.existingUrl ? "btn-modify" : "btn-submit";
           let inputClass = client.existingUrl ? "submitted-input" : "";
           
-          let linkHtml = client.existingUrl ? `<a href="${client.existingUrl}" id="link_${client.colIndex}" target="_blank" class="view-link">🔗 링크</a>` : `<a href="#" id="link_${client.colIndex}" target="_blank" class="view-link hidden">🔗 링크</a>`;
+          const safeUrl = escapeHtml(client.existingUrl);
+          let linkHtml = client.existingUrl ? `<a href="${safeUrl}" id="link_${client.colIndex}" target="_blank" rel="noopener" class="view-link">🔗 링크</a>` : `<a href="#" id="link_${client.colIndex}" target="_blank" rel="noopener" class="view-link hidden">🔗 링크</a>`;
 
           htmlStr += `
             <div class="client-item">
               <div class="client-header">
-                <label class="client-label">📍 ${client.name}</label>
+                <label class="client-label">📍 ${escapeHtml(client.name)}</label>
                 ${linkHtml}
               </div>
               <div class="input-group">
-                <input type="url" id="url_${client.colIndex}" class="${inputClass}" value="${client.existingUrl}" placeholder="https://..." autocomplete="off" oninput="validateInput(this)">
+                <input type="url" id="url_${client.colIndex}" class="${inputClass}" value="${safeUrl}" placeholder="https://..." autocomplete="off" oninput="validateInput(this)">
                 <button id="btn_${client.colIndex}" class="${btnClass}" onclick="submitSingle(${client.colIndex})">${btnText}</button>
               </div>
             </div>
@@ -375,8 +385,9 @@
         input.value = urlVal; 
       }
 
+      const prevLabel = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" id="btn-spinner"></span>';
+      btn.innerHTML = '<span class="spinner"></span>';
 
       google.script.run
         .withSuccessHandler(function(res) {
@@ -391,7 +402,7 @@
         })
         .withFailureHandler(function(err) {
           btn.disabled = false;
-          btn.innerHTML = '제출';
+          btn.innerHTML = prevLabel;
           showModal("저장 중 문제가 발생했습니다: " + err);
         })
         .saveSingleUrl(currentRow, colIndex, urlVal);

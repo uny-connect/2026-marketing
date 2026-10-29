@@ -8,7 +8,6 @@ const CONFIG = {
     CALENDAR_BOT: "캘린더봇",
     REPORT: "2026_보고서",
     MASTER_DATA: "Master_Data",
-    REPORT_ID: "report id",
     CHART_SETTING: "2026_보고서ver2",
     CHART_DATA: "차트_데이터"
   },
